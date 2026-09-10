@@ -29,6 +29,8 @@
             justify-content: space-between;
             align-items: center;
             margin-bottom: 40px;
+            flex-wrap: wrap;
+            gap:8px;
         }
         .btn {
             padding: 9px 14px;
@@ -71,11 +73,6 @@
             color: #222;
             margin-bottom: 24px;
         }
-        .mask-word {
-            background: black;
-            color: black;
-            user-select: none;
-        }
         .meaning-area {
             font-size: 20px;
             color: #444;
@@ -83,13 +80,8 @@
             padding: 12px;
             border: 1px solid #e4e7ed;
             border-radius: 12px;
-            margin-bottom: 36px;
+            margin-bottom:36px;
             white-space: pre-line;
-        }
-        .mask-meaning {
-            background: black;
-            color: black;
-            user-select: none;
         }
         .control-row {
             display: flex;
@@ -156,18 +148,18 @@
             gap:16px;
             flex-wrap:wrap;
             margin-top:12px;
-            justify-content:center;
+            justify-content:space-between;
         }
         .btn-modal-blue {
             background:#2196f3;
             color:white;
-            font-size:20px;
-            padding:16px 32px;
+            font-size:24px;
+            padding:18px 36px;
         }
         .btn-modal-orange {
             background:#ff9800;
             color:white;
-            font-size:20px;
+            font-size:24px;
             padding:16px 32px;
         }
         .file-tip {
@@ -241,25 +233,25 @@
             <div class="file-tip">导入文件：仅支持TXT，一行一个英文单词，自动添加，释义后续手动填写</div>
             <input type="file" id="fileImport" accept=".txt">
             <div class="modal-buttons">
-                <button class="btn btn-modal-blue" id="saveWordBtn">保存</button>
                 <button class="btn btn-modal-orange" id="openEudicBtn">跳转欧路</button>
+                <button class="btn btn-modal-blue" id="saveWordBtn">保存</button>
             </div>
         </div>
     </div>
 
-    <!-- 遮挡选项弹窗 -->
+    <!-- 遮挡选项弹窗，只保留英文、中文 -->
     <div class="modal-wrap" id="maskModal">
         <div class="modal">
             <span class="close-x" id="closeMaskX">×</span>
             <h3>遮挡选项</h3>
             <div class="modal-buttons">
-                <button class="btn btn-modal-blue" id="maskEn">遮挡英文</button>
-                <button class="btn btn-modal-orange" id="maskZh">遮挡释义</button>
+                <button class="btn btn-modal-blue" id="maskEn">英文</button>
+                <button class="btn btn-modal-orange" id="maskZh">中文</button>
             </div>
         </div>
     </div>
 
-    <!-- 单词列表弹窗（核心新增） -->
+    <!-- 单词列表弹窗 -->
     <div class="modal-wrap" id="listModal">
         <div class="modal">
             <span class="close-x" id="closeListX">×</span>
@@ -274,12 +266,11 @@
 
 <script>
     let wordList = [];
-    let currentIndex = 0;
-    let slicePool = []; // 当前选中区间的词池（仅起始词往后）
+    let slicePool = [];
     let slicePtr = 0;
-    let reviewMode = "normal"; // normal正序 / shuffle乱序
-    const dictCache = {};
-    const isLocalFile = window.location.protocol === "file:";
+    let reviewMode = "normal";
+    // 默认：无遮挡，中英文全部显示
+    let maskType = "none"; // none / en / zh
 
     const wordDisplay = document.getElementById('wordDisplay');
     const meaningDisplay = document.getElementById('meaningDisplay');
@@ -292,20 +283,27 @@
     const inputMeaning = document.getElementById('inputMeaning');
     const fileImport = document.getElementById('fileImport');
 
-    // 读取本地存储
-    function loadFromStorage() {
-        const saved = localStorage.getItem("myWordList");
-        if(saved) wordList = JSON.parse(saved);
-        // 默认全词正序
-        slicePool = [...wordList];
-        slicePtr = 0;
-        render();
+    //加载单词
+    function loadWords(){
+        const saved = localStorage.getItem("wordData");
+        if(saved){
+            wordList = JSON.parse(saved);
+        }else{
+            wordList = [];
+        }
     }
-    function saveStorage() {
-        localStorage.setItem("myWordList", JSON.stringify(wordList));
+    function saveWords(){
+        localStorage.setItem("wordData", JSON.stringify(wordList));
     }
 
-    // 渲染当前词
+    //初始化复习池
+    function initSlicePool(){
+        slicePool = [...wordList];
+        slicePtr =0;
+        render();
+    }
+
+    // 渲染当前词单词，遮挡替换为****
     function render() {
         if(slicePool.length === 0) {
             wordDisplay.innerText = "暂无单词";
@@ -313,11 +311,19 @@
             return;
         }
         const item = slicePool[slicePtr];
-        wordDisplay.innerText = item.en;
-        meaningDisplay.innerText = item.userMean;
+        if(maskType === "en"){
+            wordDisplay.innerText = "****";
+            meaningDisplay.innerText = item.userMean;
+        }else if(maskType === "zh"){
+            wordDisplay.innerText = item.en;
+            meaningDisplay.innerText = "****";
+        }else{
+            // 默认状态：全部显示
+            wordDisplay.innerText = item.en;
+            meaningDisplay.innerText = item.userMean;
+        }
     }
 
-    // 切换单词自动跟读
     async function switchWordInPool(ptr) {
         if(slicePool.length ===0) return;
         slicePtr = ptr;
@@ -325,14 +331,12 @@
         await startReadSequence();
     }
 
-    // 上一个（只在当前词池内）
     document.getElementById('prevBtn').onclick = ()=>{
         if(slicePool.length ===0) return;
         let idx = slicePtr -1;
         if(idx <0) idx = slicePool.length -1;
         switchWordInPool(idx);
     }
-    // 下一个（只在当前词池内）
     document.getElementById('nextBtn').onclick = ()=>{
         if(slicePool.length ===0) return;
         let idx = slicePtr +1;
@@ -340,18 +344,16 @@
         switchWordInPool(idx);
     }
 
-    // 释义直接编辑，失去焦点保存
     meaningDisplay.onblur = function(){
         if(slicePool.length ===0) return;
-        // 同步修改到原始总列表
         const curEn = slicePool[slicePtr].en;
         const realItem = wordList.find(w=>w.en === curEn);
         if(realItem) realItem.userMean = this.innerText;
-        saveStorage();
+        saveWords();
         statusTip.innerText = "✅ 释义已更新保存";
     }
 
-    // ===== 添加单词弹窗 =====
+    // 添加单词弹窗
     document.getElementById('addBtn').onclick = ()=>{
         addModal.style.display = "flex";
         inputWord.value = "";
@@ -360,7 +362,6 @@
     document.getElementById('closeAddX').onclick = ()=>{
         addModal.style.display = "none";
     }
-    // 保存单词
     document.getElementById('saveWordBtn').onclick = ()=>{
         const w = inputWord.value.trim();
         const m = inputMeaning.value.trim();
@@ -374,15 +375,11 @@
             return;
         }
         wordList.push({en:w, userMean:m});
-        saveStorage();
-        // 刷新词池
-        slicePool = [...wordList];
-        slicePtr = wordList.length -1;
-        render();
+        saveWords();
+        initSlicePool();
         addModal.style.display = "none";
         statusTip.innerText = "✅ 单词添加成功";
     }
-    // 跳转欧路词典
     document.getElementById('openEudicBtn').onclick = ()=>{
         const w = inputWord.value.trim();
         if(w){
@@ -391,7 +388,6 @@
             statusTip.innerText = "⚠️ 请先输入单词";
         }
     }
-    // 导入txt
     fileImport.onchange = function(e){
         const file = e.target.files[0];
         if(!file) return;
@@ -409,17 +405,15 @@
                     addCnt++;
                 }
             })
-            saveStorage();
-            slicePool = [...wordList];
-            slicePtr = 0;
-            render();
+            saveWords();
+            initSlicePool();
             addModal.style.display="none";
             statusTip.innerText = `✅ 导入完成，新增${addCnt}个单词`;
         }
         reader.readAsText(file);
     }
 
-    // ===== 遮挡设置 =====
+    //遮挡逻辑，点击英文/中文切换遮挡；再次点击同一按钮恢复原状
     document.getElementById('maskBtn').onclick = ()=>{
         maskModal.style.display = "flex";
     }
@@ -427,17 +421,17 @@
         maskModal.style.display = "none";
     }
     document.getElementById('maskEn').onclick = ()=>{
-        wordDisplay.classList.add("mask-word");
-        meaningDisplay.classList.remove("mask-meaning");
+        maskType = maskType === "en" ? "none" : "en";
+        render();
         maskModal.style.display="none";
     }
     document.getElementById('maskZh').onclick = ()=>{
-        wordDisplay.classList.remove("mask-word");
-        meaningDisplay.classList.add("mask-meaning");
+        maskType = maskType === "zh" ? "none" : "zh";
+        render();
         maskModal.style.display="none";
     }
 
-    // ===== 单词列表弹窗逻辑 =====
+    //单词列表弹窗
     document.getElementById('openListBtn').onclick = ()=>{
         renderWordListModal();
         listModal.style.display = "flex";
@@ -445,7 +439,6 @@
     document.getElementById('closeListX').onclick = ()=>{
         listModal.style.display = "none";
     }
-    // 正序/乱序切换按钮
     document.querySelectorAll(".mode-btn").forEach(btn=>{
         btn.onclick = function(){
             document.querySelectorAll(".mode-btn").forEach(b=>b.classList.remove("active"));
@@ -453,7 +446,6 @@
             reviewMode = this.dataset.mode;
         }
     })
-    // 渲染单词列表弹窗
     function renderWordListModal(){
         wordListBox.innerHTML = "";
         wordList.forEach((item, realIdx)=>{
@@ -461,23 +453,20 @@
             div.className = "word-item";
             div.innerText = `${realIdx+1}. ${item.en}｜${item.userMean||"(无释义)"}`;
             div.onclick = ()=>{
-                // 截取：从选中这个下标【往后】所有，前面直接丢掉
                 const rawSlice = wordList.slice(realIdx);
                 if(reviewMode === "shuffle"){
-                    // 只打乱选中这一段，前面词不参与
                     slicePool = shuffleArr(rawSlice);
                 }else{
                     slicePool = [...rawSlice];
                 }
                 slicePtr = 0;
                 render();
-                listModal.style.display = "none";
+                listModal.style.display="none";
                 statusTip.innerText = `✅ 从【${item.en}】开始复习，共${slicePool.length}个`;
             }
             wordListBox.appendChild(div);
         })
     }
-    // 洗牌函数（只打乱选中区间）
     function shuffleArr(arr){
         const tmp = [...arr];
         for(let i=tmp.length-1;i>0;i--){
@@ -487,7 +476,7 @@
         return tmp;
     }
 
-    // 朗读逻辑：单词读3遍，间隔600ms
+    //朗读
     async function startReadSequence(){
         if(slicePool.length ===0) return;
         const item = slicePool[slicePtr];
@@ -499,7 +488,6 @@
         await sleep(600);
         await speak(item.en);
         await sleep(1000);
-        // 如果有释义文字，就读释义
         if(item.userMean.trim() !== ""){
             await speak(item.userMean);
             await sleep(2200);
@@ -523,14 +511,15 @@
         return new Promise(resolve=>setTimeout(resolve, ms));
     }
 
-    // 点击空白关闭弹窗
     window.onclick = function(e){
         if(e.target === addModal) addModal.style.display="none";
         if(e.target === maskModal) maskModal.style.display="none";
         if(e.target === listModal) listModal.style.display="none";
     }
 
-    loadFromStorage();
+    //初始化
+    loadWords();
+    initSlicePool();
 </script>
 </body>
 </html>
