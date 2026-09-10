@@ -18,6 +18,7 @@
             flex-direction: column;
             align-items: center;
             padding: 20px 16px;
+            padding-bottom: 80px;
         }
         .container {
             width: 100%;
@@ -43,6 +44,19 @@
         .btn-top-right {
             background-color: #2196f3;
             color: white;
+        }
+        .btn-list {
+            position: fixed;
+            left:16px;
+            bottom:20px;
+            background:#3949ab;
+            color:#fff;
+            font-size:16px;
+            padding:12px 16px;
+            border-radius:12px;
+            border:none;
+            cursor:pointer;
+            z-index:10;
         }
         .card {
             background: #ffffff;
@@ -105,14 +119,17 @@
             align-items:center;
             justify-content:center;
             padding:20px;
+            z-index:20;
         }
         .modal {
             background:#fff;
             border-radius:20px;
             width:100%;
             max-width:520px;
+            max-height:85vh;
             padding:28px;
             position:relative;
+            overflow-y:auto;
         }
         .close-x {
             position:absolute;
@@ -164,6 +181,33 @@
             font-size:15px;
             text-align:center;
         }
+        .word-item {
+            padding:12px;
+            border-bottom:1px solid #eee;
+            cursor:pointer;
+            text-align:left;
+        }
+        .word-item:hover {
+            background:#f0f4f9;
+        }
+        .select-mode-row {
+            display:flex;
+            gap:12px;
+            margin-bottom:16px;
+            justify-content:center;
+        }
+        .mode-btn {
+            padding:10px 18px;
+            border-radius:8px;
+            border:1px solid #ccc;
+            background:#fff;
+            cursor:pointer;
+        }
+        .mode-btn.active {
+            background:#2196f3;
+            color:#fff;
+            border-color:#2196f3;
+        }
     </style>
 </head>
 <body>
@@ -183,6 +227,9 @@
         </div>
         <div class="status-tip" id="statusTip">单词保存在浏览器本地</div>
     </div>
+
+    <!-- 左下角：单词列表按钮 -->
+    <button class="btn-list" id="openListBtn">📖 所有单词</button>
 
     <!-- 添加单词弹窗 -->
     <div class="modal-wrap" id="addModal">
@@ -212,9 +259,25 @@
         </div>
     </div>
 
+    <!-- 单词列表弹窗（核心新增） -->
+    <div class="modal-wrap" id="listModal">
+        <div class="modal">
+            <span class="close-x" id="closeListX">×</span>
+            <h3>选择起始单词（只复习该词往后）</h3>
+            <div class="select-mode-row">
+                <button class="mode-btn active" data-mode="normal">正序</button>
+                <button class="mode-btn" data-mode="shuffle">乱序</button>
+            </div>
+            <div id="wordListBox"></div>
+        </div>
+    </div>
+
 <script>
     let wordList = [];
     let currentIndex = 0;
+    let slicePool = []; // 当前选中区间的词池（仅起始词往后）
+    let slicePtr = 0;
+    let reviewMode = "normal"; // normal正序 / shuffle乱序
     const dictCache = {};
     const isLocalFile = window.location.protocol === "file:";
 
@@ -223,6 +286,8 @@
     const statusTip = document.getElementById('statusTip');
     const addModal = document.getElementById('addModal');
     const maskModal = document.getElementById('maskModal');
+    const listModal = document.getElementById('listModal');
+    const wordListBox = document.getElementById('wordListBox');
     const inputWord = document.getElementById('inputWord');
     const inputMeaning = document.getElementById('inputMeaning');
     const fileImport = document.getElementById('fileImport');
@@ -231,51 +296,57 @@
     function loadFromStorage() {
         const saved = localStorage.getItem("myWordList");
         if(saved) wordList = JSON.parse(saved);
+        // 默认全词正序
+        slicePool = [...wordList];
+        slicePtr = 0;
         render();
     }
     function saveStorage() {
         localStorage.setItem("myWordList", JSON.stringify(wordList));
     }
 
-    // 渲染当前单词
+    // 渲染当前词
     function render() {
-        if(wordList.length === 0) {
+        if(slicePool.length === 0) {
             wordDisplay.innerText = "暂无单词";
             meaningDisplay.innerText = "点右上角 + 添加单词";
             return;
         }
-        const item = wordList[currentIndex];
+        const item = slicePool[slicePtr];
         wordDisplay.innerText = item.en;
         meaningDisplay.innerText = item.userMean;
     }
 
     // 切换单词自动跟读
-    async function switchWord(index) {
-        if(wordList.length ===0) return;
-        currentIndex = index;
+    async function switchWordInPool(ptr) {
+        if(slicePool.length ===0) return;
+        slicePtr = ptr;
         render();
         await startReadSequence();
     }
 
-    // 上一个
+    // 上一个（只在当前词池内）
     document.getElementById('prevBtn').onclick = ()=>{
-        if(wordList.length ===0) return;
-        let idx = currentIndex - 1;
-        if(idx <0) idx = wordList.length -1;
-        switchWord(idx);
+        if(slicePool.length ===0) return;
+        let idx = slicePtr -1;
+        if(idx <0) idx = slicePool.length -1;
+        switchWordInPool(idx);
     }
-    // 下一个
+    // 下一个（只在当前词池内）
     document.getElementById('nextBtn').onclick = ()=>{
-        if(wordList.length ===0) return;
-        let idx = currentIndex + 1;
-        if(idx >= wordList.length) idx = 0;
-        switchWord(idx);
+        if(slicePool.length ===0) return;
+        let idx = slicePtr +1;
+        if(idx >= slicePool.length) idx = 0;
+        switchWordInPool(idx);
     }
 
     // 释义直接编辑，失去焦点保存
     meaningDisplay.onblur = function(){
-        if(wordList.length ===0) return;
-        wordList[currentIndex].userMean = this.innerText;
+        if(slicePool.length ===0) return;
+        // 同步修改到原始总列表
+        const curEn = slicePool[slicePtr].en;
+        const realItem = wordList.find(w=>w.en === curEn);
+        if(realItem) realItem.userMean = this.innerText;
         saveStorage();
         statusTip.innerText = "✅ 释义已更新保存";
     }
@@ -304,7 +375,9 @@
         }
         wordList.push({en:w, userMean:m});
         saveStorage();
-        currentIndex = wordList.length -1;
+        // 刷新词池
+        slicePool = [...wordList];
+        slicePtr = wordList.length -1;
         render();
         addModal.style.display = "none";
         statusTip.innerText = "✅ 单词添加成功";
@@ -337,6 +410,8 @@
                 }
             })
             saveStorage();
+            slicePool = [...wordList];
+            slicePtr = 0;
             render();
             addModal.style.display="none";
             statusTip.innerText = `✅ 导入完成，新增${addCnt}个单词`;
@@ -362,18 +437,68 @@
         maskModal.style.display="none";
     }
 
-    // 朗读逻辑：单词读3遍，释义有内容就朗读
+    // ===== 单词列表弹窗逻辑 =====
+    document.getElementById('openListBtn').onclick = ()=>{
+        renderWordListModal();
+        listModal.style.display = "flex";
+    }
+    document.getElementById('closeListX').onclick = ()=>{
+        listModal.style.display = "none";
+    }
+    // 正序/乱序切换按钮
+    document.querySelectorAll(".mode-btn").forEach(btn=>{
+        btn.onclick = function(){
+            document.querySelectorAll(".mode-btn").forEach(b=>b.classList.remove("active"));
+            this.classList.add("active");
+            reviewMode = this.dataset.mode;
+        }
+    })
+    // 渲染单词列表弹窗
+    function renderWordListModal(){
+        wordListBox.innerHTML = "";
+        wordList.forEach((item, realIdx)=>{
+            const div = document.createElement("div");
+            div.className = "word-item";
+            div.innerText = `${realIdx+1}. ${item.en}｜${item.userMean||"(无释义)"}`;
+            div.onclick = ()=>{
+                // 截取：从选中这个下标【往后】所有，前面直接丢掉
+                const rawSlice = wordList.slice(realIdx);
+                if(reviewMode === "shuffle"){
+                    // 只打乱选中这一段，前面词不参与
+                    slicePool = shuffleArr(rawSlice);
+                }else{
+                    slicePool = [...rawSlice];
+                }
+                slicePtr = 0;
+                render();
+                listModal.style.display = "none";
+                statusTip.innerText = `✅ 从【${item.en}】开始复习，共${slicePool.length}个`;
+            }
+            wordListBox.appendChild(div);
+        })
+    }
+    // 洗牌函数（只打乱选中区间）
+    function shuffleArr(arr){
+        const tmp = [...arr];
+        for(let i=tmp.length-1;i>0;i--){
+            const r = Math.floor(Math.random()*(i+1));
+            [tmp[i],tmp[r]] = [tmp[r],tmp[i]];
+        }
+        return tmp;
+    }
+
+    // 朗读逻辑：单词读3遍，间隔600ms
     async function startReadSequence(){
-        if(wordList.length ===0) return;
-        const item = wordList[currentIndex];
+        if(slicePool.length ===0) return;
+        const item = slicePool[slicePtr];
         speechSynthesis.cancel();
         statusTip.innerText = "🔊 正在朗读";
         await speak(item.en);
-        await sleep(1100);
+        await sleep(600);
         await speak(item.en);
-        await sleep(1100);
+        await sleep(600);
         await speak(item.en);
-        await sleep(1600);
+        await sleep(1000);
         // 如果有释义文字，就读释义
         if(item.userMean.trim() !== ""){
             await speak(item.userMean);
@@ -384,7 +509,6 @@
     function speak(text){
         return new Promise(resolve=>{
             const ut = new SpeechSynthesisUtterance(text);
-            // 中文释义自动切换中文语音
             if(/[\u4e00-\u9fa5]/.test(text)){
                 ut.lang = 'zh-CN';
             }else{
@@ -403,6 +527,7 @@
     window.onclick = function(e){
         if(e.target === addModal) addModal.style.display="none";
         if(e.target === maskModal) maskModal.style.display="none";
+        if(e.target === listModal) listModal.style.display="none";
     }
 
     loadFromStorage();
