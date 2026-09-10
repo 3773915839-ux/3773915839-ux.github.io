@@ -132,8 +132,10 @@
             color:#000000;
             cursor:pointer;
         }
+        /* ========== 【重点改：弹窗标题放大】 ========== */
         .modal h3 {
-            margin-bottom:20px;
+            margin-bottom:24px;
+            font-size:24px;
         }
         .modal input, .modal textarea {
             width:100%;
@@ -173,27 +175,31 @@
             font-size:15px;
             text-align:center;
         }
+        /* ========== 【重点改：单词列表条目放大】 ========== */
         .word-item {
-            padding:12px;
+            padding:16px 12px;
             border-bottom:1px solid #eee;
             cursor:pointer;
             text-align:left;
+            font-size:20px;
         }
         .word-item:hover {
             background:#f0f4f9;
         }
+        /* ========== 【重点改：正序乱序按钮放大】 ========== */
         .select-mode-row {
             display:flex;
-            gap:12px;
-            margin-bottom:16px;
+            gap:16px;
+            margin-bottom:20px;
             justify-content:center;
         }
         .mode-btn {
-            padding:10px 18px;
-            border-radius:8px;
+            padding:14px 30px;
+            border-radius:10px;
             border:1px solid #ccc;
             background:#fff;
             cursor:pointer;
+            font-size:20px;
         }
         .mode-btn.active {
             background:#2196f3;
@@ -251,7 +257,7 @@
         </div>
     </div>
 
-    <!-- 单词列表弹窗 -->
+    <!-- 单词列表弹窗（就是截图里这个弹窗，字体已放大） -->
     <div class="modal-wrap" id="listModal">
         <div class="modal">
             <span class="close-x" id="closeListX">×</span>
