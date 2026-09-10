@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>个人单词跟读卡片｜专属词义包</title>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box;font-family:system-ui}
+        body{background:#f0f4f8;padding:24px 16px;display:flex;flex-direction:column;align-items:center;gap:20px}
+        .container{width:min(600px,100%)}
+        .card{background:#fff;border-radius:18px;padding:32px 24px;box-shadow:0 4px 16px #00000015;text-align:center;margin-bottom:20px}
+        .word{font-size:38px;font-weight:600;color:#222;margin-bottom:8px}
+        .phonetic{font-size:18px;color:#666;margin-bottom:16px}
+        .meaning{font-size:18px;color:#444;min-height:70px;text-align:left;white-space:pre-line}
+        .input-area{background:#fff;border-radius:14px;padding:20px;margin-bottom:16px;box-shadow:0 2px 10px #00000010}
+        .input-area h4{margin-bottom:12px;color:#333}
+        input,textarea{width:100%;padding:10px 12px;margin-bottom:10px;border:1px solid #dcdfe6;border-radius:8px;font-size:16px}
+        .btn-group{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:24px}
+        button{padding:10px 14px;border:none;border-radius:10px;font-size:15px;cursor:pointer;color:#fff}
+        .btn-blue{background:#407bff}
+        .btn-purple{background:#9254de}
+        .btn-green{background:#00b42a}
+        .btn-gray{background:#86909c}
+        .btn-red{background:#f53f3f}
+        .btn-orange{background:#ff7d00}
+        .tip{color:#777;font-size:14px;margin-top:12px}
+        .file-area{margin:10px 0}
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="input-area">
+        <h4>添加新单词（自定义释义优先）</h4>
+        <input type="text" id="newWord" placeholder="输入英文单词">
+        <textarea id="newMeaning" rows="2" placeholder="填写你的专属释义（留空自动联网查询）"></textarea>
+        <button class="btn-blue" onclick="addWord()">添加到单词本</button>
+        <div class="file-area">
+            <input type="file" id="fileInput" accept=".txt">
+            <button class="btn-gray" onclick="exportWords()">导出单词本txt</button>
+        </div>
+        <div class="tip">导入txt：一行一个英文单词</div>
+    </div>
+
+    <div class="card">
+        <div class="word" id="wordEl">--</div>
+        <div class="phonetic" id="phoneticEl">--</div>
+        <div class="meaning" id="meaningEl">加载中</div>
+        <div class="btn-group">
+            <button class="btn-blue" onclick="prevWord()">上一个</button>
+            <button class="btn-blue" onclick="nextWord()">下一个</button>
+            <button class="btn-purple" onclick="startReadSequence()">开始跟读朗读</button>
+            <button class="btn-green" onclick="toggleMask()">隐藏/显示释义（自测模式）</button>
+            <button class="btn-orange" onclick="openEudic()">欧路词典查词</button>
+            <button class="btn-gray" onclick="editCurrent()">编辑释义</button>
+            <button class="btn-red" onclick="delCurrent()">删除单词</button>
+        </div>
+        <div class="tip" id="statusTip">单词本已本地保存</div>
+    </div>
+</div>
+
+<script>
+    let wordList = [];
+    let currentIndex = 0;
+    const dictCache = {};
+    let currentAudioUrl = null;
+    let showMeaning = true;
+    const isLocalFile = window.location.protocol === "file:";
+
+    const wordEl = document.getElementById('wordEl');
+    const phoneticEl = document.getElementById('phoneticEl');
+    const meaningEl = document.getElementById('meaningEl');
+    const statusTip = document.getElementById('statusTip');
+    const fileInput = document.getElementById('fileInput');
+    const newWordInput = document.getElementById('newWord');
+    const newMeaningInput = document.getElementById('newMeaning');
+
+    // 本地存储读写
+    function loadFromStorage(){
+        const saved = localStorage.getItem("myWordBook");
+        if(saved){
+            wordList = JSON.parse(saved);
+        }
+        render();
+    }
+    function saveToStorage(){
+        localStorage.setItem("myWordBook", JSON.stringify(wordList));
+    }
+
+    // 添加单词
+    function addWord(){
+        const en = newWordInput.value.trim();
+        const userMean = newMeaningInput.value.trim();
+        if(!en){
+            statusTip.innerText="请输入英文单词";
+            return;
+        }
+        const exist = wordList.find(w=>w.en.toLowerCase()===en.toLowerCase());
+        if(exist){
+            statusTip.innerText="该单词已经存在";
+            return;
+        }
+        wordList.push({
+            en:en,
+            userMean:userMean,
+            apiMean:"",
+            phonetic:""
+        })
+        saveToStorage();
+        newWordInput.value = "";
+        newMeaningInput.value = "";
+        currentIndex = wordList.length - 1;
+        render();
+        statusTip.innerText="✅ 添加成功";
+    }
+
+    // 编辑当前单词
+    function editCurrent(){
+        if(wordList.length===0) return;
+        const item = wordList[currentIndex];
+        const newMean = prompt(`修改【${item.en}】的专属释义：`, item.userMean);
+        if(newMean !== null){
+            item.userMean = newMean;
+            saveToStorage();
+            render();
+            statusTip.innerText="✅ 释义已更新";
+        }
+    }
+    // 删除当前单词
+    function delCurrent(){
+        if(wordList.length===0) return;
+        const item = wordList[currentIndex];
+        if(confirm(`确定删除单词 ${item.en}？`)){
+            wordList.splice(currentIndex,1);
+            if(currentIndex >= wordList.length) currentIndex = Math.max(0, wordList.length-1);
+            saveToStorage();
+            render();
+            statusTip.innerText="单词已删除";
+        }
+    }
+
+    // 联网查词典
+    async function fetchDict(word){
+        if(isLocalFile){
+            return {phonetic:"", defText:"本地文件模式，无法联网查词，请填写自定义释义", audioUrl:""};
+        }
+        if(dictCache[word]) return dictCache[word];
+        try{
+            const res = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${word}`);
+            if(!res.ok) throw new Error("no word");
+            const data = await res.json();
+            const entry = data[0];
+            const phonetic = entry.phonetics?.find(p=>p.text)?.text || "";
+            const audioUrl = entry.phonetics?.find(p=>p.audio)?.audio || "";
+            let defText = "";
+            entry.meanings.slice(0,2).forEach(m=>{
+                defText += `${m.partOfSpeech}：${m.definitions[0].definition}\n`;
+            })
+            dictCache[word] = {phonetic, defText, audioUrl};
+            return dictCache[word];
+        }catch(e){
+            dictCache[word] = {phonetic:"", defText:"未能联网查询释义", audioUrl:""};
+            return dictCache[word];
+        }
+    }
+
+    async function render(){
+        if(wordList.length ===0){
+            wordEl.innerText = "暂无单词";
+            phoneticEl.innerText = "--";
+            meaningEl.innerText = "请添加单词";
+            currentAudioUrl = null;
+            return;
+        }
+        const item = wordList[currentIndex];
+        wordEl.innerText = item.en;
+        if(item.userMean){
+            phoneticEl.innerText = item.phonetic || "";
+            meaningEl.innerText = showMeaning ? item.userMean : "***";
+            currentAudioUrl = null;
+        }else{
+            phoneticEl.innerText = "查询中...";
+            meaningEl.innerText = showMeaning ? "查询中..." : "***";
+            const dict = await fetchDict(item.en);
+            phoneticEl.innerText = dict.phonetic;
+            meaningEl.innerText = showMeaning ? dict.defText : "***";
+            currentAudioUrl = dict.audioUrl;
+        }
+    }
+
+    // 切换释义隐藏/显示
+    function toggleMask(){
+        showMeaning = !showMeaning;
+        render();
+    }
+
+    function nextWord(){
+        if(wordList.length===0) return;
+        currentIndex = (currentIndex + 1) % wordList.length;
+        render();
+    }
+    function prevWord(){
+        if(wordList.length===0) return;
+        currentIndex = (currentIndex -1 + wordList.length) % wordList.length;
+        render();
+    }
+
+    // ====== 朗读逻辑【你的顺序】======
+    async function startReadSequence(){
+        if(wordList.length===0) return;
+        const item = wordList[currentIndex];
+        speechSynthesis.cancel();
+        statusTip.innerText="🔊 跟读开始";
+
+        // 第1遍单词
+        let utterEn = new SpeechSynthesisUtterance(item.en);
+        utterEn.lang = "en-US";
+        speechSynthesis.speak(utterEn);
+        await sleep(1100);
+
+        // 第2遍单词
+        utterEn = new SpeechSynthesisUtterance(item.en);
+        utterEn.lang = "en-US";
+        speechSynthesis.speak(utterEn);
+        await sleep(1100);
+
+        // 第3遍单词
+        utterEn = new SpeechSynthesisUtterance(item.en);
+        utterEn.lang = "en-US";
+        speechSynthesis.speak(utterEn);
+        await sleep(1100);
+
+        // 获取释义文本
+        let meaningText = item.userMean;
+        if(!meaningText){
+            const dict = await fetchDict(item.en);
+            meaningText = dict.defText;
+        }
+        // 读中文释义
+        const utterCn = new SpeechSynthesisUtterance(meaningText);
+        utterCn.lang = "zh-CN";
+        speechSynthesis.speak(utterCn);
+        await sleep(1600);
+
+        // 读完整套，停顿留给你跟读
+        await sleep(2200);
+        statusTip.innerText="✅ 本轮跟读结束";
+    }
+    function sleep(ms){
+        return new Promise(resolve=>setTimeout(resolve, ms));
+    }
+
+    // 唤起欧路词典
+    function openEudic(){
+        if(wordList.length===0) return;
+        const w = wordList[currentIndex].en;
+        window.open(`eudic://dict/${w}`);
+    }
+
+    // 文件导入单词
+    fileInput.onchange = async function(e){
+        const file = e.target.files[0];
+        if(!file) return;
+        const reader = new FileReader();
+        reader.onload = function(event){
+            const text = event.target.result;
+            const lines = text.split(/\r?\n/);
+            let addCount = 0;
+            lines.forEach(line=>{
+                const w = line.trim();
+                if(!w) return;
+                const exist = wordList.find(x=>x.en.toLowerCase()===w.toLowerCase());
+                if(!exist){
+                    wordList.push({en:w, userMean:"", apiMean:"", phonetic:""});
+                    addCount++;
+                }
+            })
+            saveToStorage();
+            currentIndex = wordList.length - addCount;
+            render();
+            statusTip.innerText=`✅ 批量导入${addCount}个新单词`;
+        }
+        reader.readAsText(file);
+    }
+    // 导出单词本
+    function exportWords(){
+        if(wordList.length===0){
+            statusTip.innerText="单词本为空";
+            return;
+        }
+        let txt = "";
+        wordList.forEach(w=>{
+            if(w.userMean){
+                txt += `${w.en},${w.userMean}\n`
+            }else{
+                txt += `${w.en}\n`
+            }
+        })
+        const blob = new Blob([txt], {type:"text/plain"});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "myWordBook.txt";
+        a.click();
+        URL.revokeObjectURL(url);
+        statusTip.innerText="✅ 单词本已导出";
+    }
+
+    loadFromStorage();
+</script>
+</body>
+</html>
