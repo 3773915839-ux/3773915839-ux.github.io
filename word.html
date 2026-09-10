@@ -132,7 +132,6 @@
             color:#000000;
             cursor:pointer;
         }
-        /* ========== 【重点改：弹窗标题放大】 ========== */
         .modal h3 {
             margin-bottom:24px;
             font-size:24px;
@@ -175,7 +174,6 @@
             font-size:15px;
             text-align:center;
         }
-        /* ========== 【重点改：单词列表条目放大】 ========== */
         .word-item {
             padding:16px 12px;
             border-bottom:1px solid #eee;
@@ -186,7 +184,6 @@
         .word-item:hover {
             background:#f0f4f9;
         }
-        /* ========== 【重点改：正序乱序按钮放大】 ========== */
         .select-mode-row {
             display:flex;
             gap:16px;
@@ -205,6 +202,29 @@
             background:#2196f3;
             color:#fff;
             border-color:#2196f3;
+        }
+        .mask-main-buttons {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 18px;
+        }
+        .mask-main-buttons .btn {
+            flex: 1;
+            font-size: 24px;
+            padding: 18px 24px;
+        }
+        .btn-modal-cancel {
+            width: 100%;
+            background: #e0e0e0;
+            color: #333;
+            border: none;
+            border-radius: 12px;
+            font-size: 20px;
+            padding: 14px;
+            cursor: pointer;
+        }
+        .btn-modal-cancel:active {
+            background: #d0d0d0;
         }
     </style>
 </head>
@@ -226,10 +246,8 @@
         <div class="status-tip" id="statusTip">单词保存在浏览器本地</div>
     </div>
 
-    <!-- 左下角：单词列表按钮 -->
     <button class="btn-list" id="openListBtn">📖 所有单词</button>
 
-    <!-- 添加单词弹窗 -->
     <div class="modal-wrap" id="addModal">
         <div class="modal">
             <span class="close-x" id="closeAddX">×</span>
@@ -245,19 +263,18 @@
         </div>
     </div>
 
-    <!-- 遮挡选项弹窗，只保留英文、中文 -->
     <div class="modal-wrap" id="maskModal">
         <div class="modal">
             <span class="close-x" id="closeMaskX">×</span>
             <h3>遮挡选项</h3>
-            <div class="modal-buttons">
+            <div class="mask-main-buttons">
                 <button class="btn btn-modal-blue" id="maskEn">英文</button>
                 <button class="btn btn-modal-orange" id="maskZh">中文</button>
             </div>
+            <button class="btn btn-modal-cancel" id="maskOff">取消遮挡</button>
         </div>
     </div>
 
-    <!-- 单词列表弹窗（就是截图里这个弹窗，字体已放大） -->
     <div class="modal-wrap" id="listModal">
         <div class="modal">
             <span class="close-x" id="closeListX">×</span>
@@ -275,8 +292,7 @@
     let slicePool = [];
     let slicePtr = 0;
     let reviewMode = "normal";
-    // 默认：无遮挡，中英文全部显示
-    let maskType = "none"; // none / en / zh
+    let maskType = "none";
 
     const wordDisplay = document.getElementById('wordDisplay');
     const meaningDisplay = document.getElementById('meaningDisplay');
@@ -289,7 +305,6 @@
     const inputMeaning = document.getElementById('inputMeaning');
     const fileImport = document.getElementById('fileImport');
 
-    //加载单词
     function loadWords(){
         const saved = localStorage.getItem("wordData");
         if(saved){
@@ -302,14 +317,12 @@
         localStorage.setItem("wordData", JSON.stringify(wordList));
     }
 
-    //初始化复习池
     function initSlicePool(){
         slicePool = [...wordList];
         slicePtr =0;
         render();
     }
 
-    // 渲染当前词单词，遮挡替换为****
     function render() {
         if(slicePool.length === 0) {
             wordDisplay.innerText = "暂无单词";
@@ -324,7 +337,6 @@
             wordDisplay.innerText = item.en;
             meaningDisplay.innerText = "****";
         }else{
-            // 默认状态：全部显示
             wordDisplay.innerText = item.en;
             meaningDisplay.innerText = item.userMean;
         }
@@ -359,7 +371,6 @@
         statusTip.innerText = "✅ 释义已更新保存";
     }
 
-    // 添加单词弹窗
     document.getElementById('addBtn').onclick = ()=>{
         addModal.style.display = "flex";
         inputWord.value = "";
@@ -419,25 +430,28 @@
         reader.readAsText(file);
     }
 
-    //遮挡逻辑，点击英文/中文切换遮挡；再次点击同一按钮恢复原状
-    document.getElementById('maskBtn').onclick = ()=>{
+    document.getElementById('maskBtn').onclick = () => {
         maskModal.style.display = "flex";
-    }
-    document.getElementById('closeMaskX').onclick = ()=>{
+    };
+    document.getElementById('closeMaskX').onclick = () => {
         maskModal.style.display = "none";
-    }
-    document.getElementById('maskEn').onclick = ()=>{
+    };
+    document.getElementById('maskEn').onclick = () => {
         maskType = maskType === "en" ? "none" : "en";
         render();
-        maskModal.style.display="none";
-    }
-    document.getElementById('maskZh').onclick = ()=>{
+        maskModal.style.display = "none";
+    };
+    document.getElementById('maskZh').onclick = () => {
         maskType = maskType === "zh" ? "none" : "zh";
         render();
-        maskModal.style.display="none";
-    }
+        maskModal.style.display = "none";
+    };
+    document.getElementById('maskOff').onclick = () => {
+        maskType = "none";
+        render();
+        maskModal.style.display = "none";
+    };
 
-    //单词列表弹窗
     document.getElementById('openListBtn').onclick = ()=>{
         renderWordListModal();
         listModal.style.display = "flex";
@@ -482,7 +496,6 @@
         return tmp;
     }
 
-    //朗读
     async function startReadSequence(){
         if(slicePool.length ===0) return;
         const item = slicePool[slicePtr];
@@ -523,9 +536,9 @@
         if(e.target === listModal) listModal.style.display="none";
     }
 
-    //初始化
     loadWords();
     initSlicePool();
 </script>
 </body>
 </html>
+
