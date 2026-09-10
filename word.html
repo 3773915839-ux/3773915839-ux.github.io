@@ -79,16 +79,20 @@
         }
         .control-row {
             display: flex;
-            gap:16px;
+            gap:24px;
             justify-content: center;
         }
         .btn-prev {
             background-color: #9c27b0;
             color:white;
+            font-size:22px;
+            padding:14px 28px;
         }
         .btn-next {
             background-color: #009688;
             color:white;
+            font-size:22px;
+            padding:14px 28px;
         }
         .modal-wrap {
             position: fixed;
@@ -108,6 +112,16 @@
             width:100%;
             max-width:520px;
             padding:28px;
+            position:relative;
+        }
+        .close-x {
+            position:absolute;
+            top:16px;
+            right:20px;
+            font-size:32px;
+            font-weight:bold;
+            color:#000000;
+            cursor:pointer;
         }
         .modal h3 {
             margin-bottom:20px;
@@ -122,21 +136,22 @@
         }
         .modal-buttons {
             display:flex;
-            gap:10px;
+            gap:16px;
             flex-wrap:wrap;
             margin-top:12px;
+            justify-content:center;
         }
         .btn-modal-blue {
             background:#2196f3;
             color:white;
+            font-size:20px;
+            padding:16px 32px;
         }
         .btn-modal-orange {
             background:#ff9800;
             color:white;
-        }
-        .btn-modal-gray {
-            background:#757575;
-            color:white;
+            font-size:20px;
+            padding:16px 32px;
         }
         .file-tip {
             font-size:14px;
@@ -162,8 +177,8 @@
             <div class="word-text" id="wordDisplay">--</div>
             <div class="meaning-area" id="meaningDisplay" contenteditable="true">请添加单词</div>
             <div class="control-row">
-                <button class="btn btn-prev" id="prevBtn">上一个单词</button>
-                <button class="btn btn-next" id="nextBtn">下一个单词</button>
+                <button class="btn btn-prev" id="prevBtn">上一个</button>
+                <button class="btn btn-next" id="nextBtn">下一个</button>
             </div>
         </div>
         <div class="status-tip" id="statusTip">单词保存在浏览器本地</div>
@@ -172,15 +187,15 @@
     <!-- 添加单词弹窗 -->
     <div class="modal-wrap" id="addModal">
         <div class="modal">
+            <span class="close-x" id="closeAddX">×</span>
             <h3>新增单词</h3>
             <input type="text" id="inputWord" placeholder="输入英文单词">
             <textarea id="inputMeaning" rows="3" placeholder="输入你的专属释义"></textarea>
             <div class="file-tip">导入文件：仅支持TXT，一行一个英文单词，自动添加，释义后续手动填写</div>
             <input type="file" id="fileImport" accept=".txt">
             <div class="modal-buttons">
-                <button class="btn btn-modal-blue" id="saveWordBtn">保存单词</button>
-                <button class="btn btn-modal-orange" id="openEudicBtn">跳转欧路词典查词</button>
-                <button class="btn btn-modal-gray" id="closeModalBtn">关闭</button>
+                <button class="btn btn-modal-blue" id="saveWordBtn">保存</button>
+                <button class="btn btn-modal-orange" id="openEudicBtn">跳转欧路</button>
             </div>
         </div>
     </div>
@@ -188,11 +203,11 @@
     <!-- 遮挡选项弹窗 -->
     <div class="modal-wrap" id="maskModal">
         <div class="modal">
+            <span class="close-x" id="closeMaskX">×</span>
             <h3>遮挡选项</h3>
             <div class="modal-buttons">
                 <button class="btn btn-modal-blue" id="maskEn">遮挡英文</button>
                 <button class="btn btn-modal-orange" id="maskZh">遮挡释义</button>
-                <button class="btn btn-modal-gray" id="maskAllOff">全部取消遮挡</button>
             </div>
         </div>
     </div>
@@ -271,7 +286,7 @@
         inputWord.value = "";
         inputMeaning.value = "";
     }
-    document.getElementById('closeModalBtn').onclick = ()=>{
+    document.getElementById('closeAddX').onclick = ()=>{
         addModal.style.display = "none";
     }
     // 保存单词
@@ -333,6 +348,9 @@
     document.getElementById('maskBtn').onclick = ()=>{
         maskModal.style.display = "flex";
     }
+    document.getElementById('closeMaskX').onclick = ()=>{
+        maskModal.style.display = "none";
+    }
     document.getElementById('maskEn').onclick = ()=>{
         wordDisplay.classList.add("mask-word");
         meaningDisplay.classList.remove("mask-meaning");
@@ -343,13 +361,8 @@
         meaningDisplay.classList.add("mask-meaning");
         maskModal.style.display="none";
     }
-    document.getElementById('maskAllOff').onclick = ()=>{
-        wordDisplay.classList.remove("mask-word");
-        meaningDisplay.classList.remove("mask-meaning");
-        maskModal.style.display="none";
-    }
 
-    // 朗读逻辑：单词读3遍，释义读一遍，停顿跟读
+    // 朗读逻辑：单词读3遍，释义有内容就朗读
     async function startReadSequence(){
         if(wordList.length ===0) return;
         const item = wordList[currentIndex];
@@ -361,7 +374,8 @@
         await sleep(1100);
         await speak(item.en);
         await sleep(1600);
-        if(item.userMean){
+        // 如果有释义文字，就读释义
+        if(item.userMean.trim() !== ""){
             await speak(item.userMean);
             await sleep(2200);
         }
@@ -370,7 +384,12 @@
     function speak(text){
         return new Promise(resolve=>{
             const ut = new SpeechSynthesisUtterance(text);
-            ut.lang = 'en-US';
+            // 中文释义自动切换中文语音
+            if(/[\u4e00-\u9fa5]/.test(text)){
+                ut.lang = 'zh-CN';
+            }else{
+                ut.lang = 'en-US';
+            }
             ut.rate = 0.95;
             ut.onend = resolve;
             speechSynthesis.speak(ut);
