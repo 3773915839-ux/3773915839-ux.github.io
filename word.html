@@ -66,6 +66,20 @@
             padding: 40px 30px;
             box-shadow: 0 4px 16px #00000012;
             text-align: center;
+            position: relative;
+        }
+        .star-btn{
+            position:absolute;
+            top:20px;
+            right:24px;
+            font-size:32px;
+            background:transparent;
+            border:none;
+            cursor:pointer;
+            color:#ccc;
+        }
+        .star-btn.active{
+            color:#ffc107;
         }
         .word-text {
             font-size: 42px;
@@ -236,6 +250,7 @@
         </div>
 
         <div class="card">
+            <button class="star-btn" id="starBtn">☆</button>
             <div class="word-text" id="wordDisplay">--</div>
             <div class="meaning-area" id="meaningDisplay" contenteditable="true">请添加单词</div>
             <div class="control-row">
@@ -304,6 +319,7 @@
     const inputWord = document.getElementById('inputWord');
     const inputMeaning = document.getElementById('inputMeaning');
     const fileImport = document.getElementById('fileImport');
+    const starBtn = document.getElementById('starBtn');
 
     function loadWords(){
         const saved = localStorage.getItem("wordData");
@@ -317,8 +333,17 @@
         localStorage.setItem("wordData", JSON.stringify(wordList));
     }
 
+    function getStarredWords(){
+        return wordList.filter(w=>w.star === true);
+    }
+
     function initSlicePool(){
-        slicePool = [...wordList];
+        const starPool = getStarredWords();
+        if(starPool.length > 0){
+            slicePool = shuffleArr([...starPool]);
+        }else{
+            slicePool = [...wordList];
+        }
         slicePtr =0;
         render();
     }
@@ -327,9 +352,14 @@
         if(slicePool.length === 0) {
             wordDisplay.innerText = "暂无单词";
             meaningDisplay.innerText = "点右上角 + 添加单词";
+            starBtn.textContent = "☆";
+            starBtn.classList.remove("active");
             return;
         }
         const item = slicePool[slicePtr];
+        starBtn.textContent = item.star ? "★" : "☆";
+        starBtn.classList.toggle("active", !!item.star);
+
         if(maskType === "en"){
             wordDisplay.innerText = "****";
             meaningDisplay.innerText = item.userMean;
@@ -346,6 +376,7 @@
         if(slicePool.length ===0) return;
         slicePtr = ptr;
         render();
+        speechSynthesis.cancel();
         await startReadSequence();
     }
 
@@ -358,8 +389,28 @@
     document.getElementById('nextBtn').onclick = ()=>{
         if(slicePool.length ===0) return;
         let idx = slicePtr +1;
-        if(idx >= slicePool.length) idx = 0;
+        if(idx >= slicePool.length) {
+            const starPool = getStarredWords();
+            if(starPool.length>0){
+                slicePool = shuffleArr([...starPool]);
+            }else{
+                slicePool = [...wordList];
+            }
+            idx=0;
+        }
         switchWordInPool(idx);
+    }
+
+    starBtn.onclick = function(){
+        if(slicePool.length ===0) return;
+        const curEn = slicePool[slicePtr].en;
+        const target = wordList.find(w=>w.en === curEn);
+        if(target){
+            target.star = !target.star;
+            saveWords();
+            render();
+            statusTip.innerText = target.star ? "⭐ 已标记星标" : "☆ 取消星标";
+        }
     }
 
     meaningDisplay.onblur = function(){
@@ -391,11 +442,15 @@
             statusTip.innerText = "⚠️ 该单词已存在";
             return;
         }
-        wordList.push({en:w, userMean:m});
+        const newWord = {en:w, userMean:m, star:false};
+        wordList.push(newWord);
         saveWords();
         initSlicePool();
+        const newIdx = slicePool.findIndex(x=>x.en === w);
+        slicePtr = newIdx >=0 ? newIdx : 0;
+        render();
         addModal.style.display = "none";
-        statusTip.innerText = "✅ 单词添加成功";
+        statusTip.innerText = `✅ 新增【${w}】，已自动切到该单词`;
     }
     document.getElementById('openEudicBtn').onclick = ()=>{
         const w = inputWord.value.trim();
@@ -418,7 +473,7 @@
                 if(!w) return;
                 const exist = wordList.find(x=>x.en.toLowerCase() === w.toLowerCase());
                 if(!exist){
-                    wordList.push({en:w, userMean:""});
+                    wordList.push({en:w, userMean:"", star:false});
                     addCnt++;
                 }
             })
@@ -468,10 +523,11 @@
     })
     function renderWordListModal(){
         wordListBox.innerHTML = "";
+        const fragment = document.createDocumentFragment();
         wordList.forEach((item, realIdx)=>{
             const div = document.createElement("div");
             div.className = "word-item";
-            div.innerText = `${realIdx+1}. ${item.en}｜${item.userMean||"(无释义)"}`;
+            div.innerText = `${realIdx+1}. ${item.en}｜${item.userMean||"(无释义)"} ${item.star?"⭐":""}`;
             div.onclick = ()=>{
                 const rawSlice = wordList.slice(realIdx);
                 if(reviewMode === "shuffle"){
@@ -484,8 +540,9 @@
                 listModal.style.display="none";
                 statusTip.innerText = `✅ 从【${item.en}】开始复习，共${slicePool.length}个`;
             }
-            wordListBox.appendChild(div);
+            fragment.appendChild(div);
         })
+        wordListBox.appendChild(fragment);
     }
     function shuffleArr(arr){
         const tmp = [...arr];
